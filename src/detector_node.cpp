@@ -1,5 +1,6 @@
 #include <rclcpp/rclcpp.hpp>
 #include <sensor_msgs/msg/image.hpp>
+#include <cv_bridge/cv_bridge.h>  // 引入cv_bridge
 #include <opencv2/opencv.hpp>
 
 class CameraPublisher : public rclcpp::Node {
@@ -26,7 +27,7 @@ public:
       std::bind(&CameraPublisher::publishFrame, this)
     );
 
-    RCLCPP_INFO(this->get_logger(), "Publishing camera feed (no cv_bridge)");
+    RCLCPP_INFO(this->get_logger(), "Publishing camera feed with cv_bridge");
   }
 
 private:
@@ -39,25 +40,24 @@ private:
       return;
     }
 
-    // 手动构建ROS2 Image消息
-    auto msg = std::make_shared<sensor_msgs::msg::Image>();
-    
-    // 设置消息头
-    msg->header.stamp = this->now();
-    msg->header.frame_id = "camera";
-    
-    // 图像参数
-    msg->height = frame.rows;
-    msg->width = frame.cols;
-    msg->encoding = "bgr8";  // OpenCV默认BGR格式
-    msg->is_bigendian = false;
-    msg->step = static_cast<sensor_msgs::msg::Image::_step_type>(frame.step);
-    
-    // 复制图像数据
-    msg->data.assign(frame.datastart, frame.dataend);
+    // 使用cv_bridge将OpenCV图像转换为ROS2消息
+    try {
+      auto msg = cv_bridge::CvImage(
+        std_msgs::msg::Header(),  // 消息头
+        "bgr8",                   // OpenCV默认BGR格式
+        frame                     // 图像数据
+      ).toImageMsg();
 
-    // 发布消息
-    pub_->publish(*msg);
+      // 设置时间戳和坐标系
+      msg->header.stamp = this->now();
+      msg->header.frame_id = "camera";
+
+      // 发布消息
+      pub_->publish(*msg);
+
+    } catch (const cv_bridge::Exception& e) {
+      RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
+    }
   }
 
   cv::VideoCapture cap_;

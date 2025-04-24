@@ -1,62 +1,67 @@
 cmake_minimum_required(VERSION 3.10)
 project(detector)
 
-# 使用C++17标准
+# 基础配置
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
-
-# 启用严格编译检查
-add_definitions(-Wall -Werror)
-
-# 为IDE提供编译命令
+add_compile_options(-Wall -Werror)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 #######################
 ## Find dependencies ##
 #######################
-
 find_package(ament_cmake_auto REQUIRED)
-find_package(rclcpp REQUIRED)
-find_package(cv_bridge REQUIRED)
-find_package(sensor_msgs REQUIRED)
-find_package(OpenCV 4.5 REQUIRED
-  COMPONENTS core imgproc  # 明确指定需要的OpenCV模块
-)
-find_package(image_transport REQUIRED)
+find_package(OpenCV 4.5 REQUIRED COMPONENTS core imgproc)
+
+# 自动查找所有在package.xml中声明的依赖
 ament_auto_find_build_dependencies()
 
 ###########
 ## Build ##
 ###########
 
-# 添加可执行文件（替代原来的detector_node）
-ament_auto_add_executable(camera_publisher
+# 1. 编译纯算法静态库（仍需手动配置）
+add_library(detector_lib STATIC
+  src/detector.cpp
+)
+target_include_directories(detector_lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  ${OpenCV_INCLUDE_DIRS}
+)
+target_link_libraries(detector_lib PUBLIC ${OpenCV_LIBS})
+
+# 2. 自动构建ROS 2节点组件
+ament_auto_add_library(detector_component SHARED
   src/detector_node.cpp
 )
 
-# 包含目录和链接库
-target_include_directories(camera_publisher PUBLIC
+# 补充手动配置（ament_auto未覆盖的部分）
+target_include_directories(detector_component PUBLIC
   ${OpenCV_INCLUDE_DIRS}
 )
-
-target_link_libraries(camera_publisher
-  ${OpenCV_LIBS}
+target_link_libraries(detector_component
+  detector_lib
   image_transport::image_transport
+  ${OpenCV_LIBS}
 )
 
-# 组件注册（如果适用）
-# rclcpp_components_register_node(camera_publisher
-#   PLUGIN your_package::CameraPublisher
-# )
+# 3. 组件注册
+rclcpp_components_register_nodes(detector_component
+  "detector_node::detector_node"
+)
 
 #############
 ## Install ##
 #############
-
+# 自动安装规则（会安装所有通过ament_auto_add_*添加的目标）
 ament_auto_package(
   INSTALL_TO_SHARE
-  # 如有需要可以添加其他安装内容
-  # config
-  # launch
-  # model
+  include
+  # 可以添加其他需要安装的目录，如config、launch等
+)
+
+# 手动安装非自动构建的目标
+install(TARGETS detector_lib
+  DESTINATION lib/${PROJECT_NAME}
 )

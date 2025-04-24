@@ -1,14 +1,13 @@
-#include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/image.hpp>
-#include <cv_bridge/cv_bridge.h>  // 引入cv_bridge
-#include <opencv2/opencv.hpp>
+#include "detector/detector_node.hpp"
+#include "rclcpp_components/register_node_macro.hpp"
+namespace detector_node
+{
 
-class CameraPublisher : public rclcpp::Node {
-public:
-  CameraPublisher() : Node("camera_publisher") {
-    // 打开默认摄像头
+  detector_node::detector_node(const rclcpp::NodeOptions &options) : Node("detector_node", options)
+  { // 打开默认摄像头
     cap_.open(0, cv::CAP_V4L2);
-    if (!cap_.isOpened()) {
+    if (!cap_.isOpened())
+    {
       RCLCPP_ERROR(this->get_logger(), "Failed to open camera!");
       throw std::runtime_error("Camera open failed");
     }
@@ -23,51 +22,42 @@ public:
 
     // 定时器（33ms ≈ 30FPS）
     timer_ = this->create_wall_timer(
-      std::chrono::milliseconds(33),
-      std::bind(&CameraPublisher::publishFrame, this)
-    );
+        std::chrono::milliseconds(33),
+        std::bind(&detector_node::publishFrame, this));
 
-    RCLCPP_INFO(this->get_logger(), "Publishing camera feed with cv_bridge");
+    RCLCPP_INFO(this->get_logger(), "Publishing camera feed (no cv_bridge)");
   }
-
-private:
-  void publishFrame() {
+  void detector_node::publishFrame()
+  {
     cv::Mat frame;
     cap_ >> frame;
 
-    if (frame.empty()) {
+    if (frame.empty())
+    {
       RCLCPP_WARN(this->get_logger(), "Empty frame captured");
       return;
     }
 
-    // 使用cv_bridge将OpenCV图像转换为ROS2消息
-    try {
-      auto msg = cv_bridge::CvImage(
-        std_msgs::msg::Header(),  // 消息头
-        "bgr8",                   // OpenCV默认BGR格式
-        frame                     // 图像数据
-      ).toImageMsg();
+    // 手动构建ROS2 Image消息
+    auto msg = std::make_shared<sensor_msgs::msg::Image>();
 
-      // 设置时间戳和坐标系
-      msg->header.stamp = this->now();
-      msg->header.frame_id = "camera";
+    // 设置消息头
+    msg->header.stamp = this->now();
+    msg->header.frame_id = "camera";
 
-      // 发布消息
-      pub_->publish(*msg);
+    // 图像参数
+    msg->height = frame.rows;
+    msg->width = frame.cols;
+    msg->encoding = "bgr8"; // OpenCV默认BGR格式
+    msg->is_bigendian = false;
+    msg->step = static_cast<sensor_msgs::msg::Image::_step_type>(frame.step);
 
-    } catch (const cv_bridge::Exception& e) {
-      RCLCPP_ERROR(this->get_logger(), "cv_bridge exception: %s", e.what());
-    }
+    // 复制图像数据
+    msg->data.assign(frame.datastart, frame.dataend);
+
+    // 发布消息
+    pub_->publish(*msg);
   }
 
-  cv::VideoCapture cap_;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_;
-  rclcpp::TimerBase::SharedPtr timer_;
-};
-
-int main(int argc, char** argv) {
-  rclcpp::init(argc, argv);
-  rclcpp::spin(std::make_shared<CameraPublisher>());
-  rclcpp::shutdown();
-  return 0;
-}
+} // namespace my_camera_pkg
+RCLCPP_COMPONENTS_REGISTER_NODE(detector_node::detector_node)

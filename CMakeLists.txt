@@ -6,13 +6,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_options(-Wall -Werror)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 
 #######################
 ## Find dependencies ##
 #######################
 find_package(ament_cmake_auto REQUIRED)
 find_package(OpenCV 4.5 REQUIRED COMPONENTS core imgproc)
-
 # 自动查找所有在package.xml中声明的依赖
 ament_auto_find_build_dependencies()
 
@@ -29,7 +29,14 @@ target_include_directories(detector_lib PUBLIC
   $<INSTALL_INTERFACE:include>
   ${OpenCV_INCLUDE_DIRS}
 )
-target_link_libraries(detector_lib PUBLIC ${OpenCV_LIBS})
+target_link_libraries(detector_lib PUBLIC
+  ${OpenCV_LIBS}
+  opencv_core
+  ament_index_cpp::ament_index_cpp
+  opencv_videoio # 关键：解决VideoCapture符号问题
+  opencv_imgproc
+  opencv_highgui
+)
 
 # 2. 自动构建ROS 2节点组件
 ament_auto_add_library(detector_component SHARED
@@ -54,6 +61,13 @@ rclcpp_components_register_nodes(detector_component
 #############
 ## Install ##
 #############
+install(DIRECTORY launch/
+  DESTINATION share/${PROJECT_NAME}/launch
+)
+install(DIRECTORY 
+  res/
+  DESTINATION share/${PROJECT_NAME}/
+)
 # 自动安装规则（会安装所有通过ament_auto_add_*添加的目标）
 ament_auto_package(
   INSTALL_TO_SHARE

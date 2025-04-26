@@ -11,11 +11,14 @@
 
   <depend>rclcpp</depend>
   <depend>rclcpp_components</depend>
+  <depend>ament_index_cpp</depend>
   <depend>cv_bridge</depend>
   <depend>sensor_msgs</depend>
   <depend>opencv4</depend>
   <depend>image_transport</depend>
   <depend>image_transport_plugins</depend>
+  <exec_depend>launch</exec_depend>
+  <exec_depend>launch_ros</exec_depend>
   <export>
     <build_type>ament_cmake</build_type>
   </export>

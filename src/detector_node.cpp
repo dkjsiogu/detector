@@ -1,10 +1,11 @@
 #include "detector/detector_node.hpp"
-#include "rclcpp_components/register_node_macro.hpp"
+
 namespace detector_node
 {
-
-  detector_node::detector_node(const rclcpp::NodeOptions &options) : Node("detector_node", options)
-  { // 打开默认摄像头
+  detector_node::detector_node(const rclcpp::NodeOptions &options)
+      : Node("detector_node", options)
+  {
+    /*打开默认摄像头
     cap_.open(0, cv::CAP_V4L2);
     if (!cap_.isOpened())
     {
@@ -16,48 +17,45 @@ namespace detector_node
     cap_.set(cv::CAP_PROP_FRAME_WIDTH, 640);
     cap_.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
     cap_.set(cv::CAP_PROP_FPS, 60);
-
-    // 创建ROS2图像发布者
+    */ 
+    // 创建 ROS2 图像发布者
     pub_ = this->create_publisher<sensor_msgs::msg::Image>("camera/image_raw", 10);
 
-    // 定时器（33ms ≈ 30FPS）
+    // 定时器（16ms ≈ 60FPS）
     timer_ = this->create_wall_timer(
-        std::chrono::milliseconds(33),
-        std::bind(&detector_node::publishFrame, this));
+        std::chrono::milliseconds(16),
+        [this]()
+        { this->publishFrame(); });
 
-    RCLCPP_INFO(this->get_logger(), "Publishing camera feed (no cv_bridge)");
+    RCLCPP_INFO(this->get_logger(), "Publishing camera feed (using cv_bridge)");
   }
+
   void detector_node::publishFrame()
   {
-    cv::Mat frame;
-    cap_ >> frame;
+    auto frame=this->det_.get_img("raw");
 
-    if (frame.empty())
+    if (!frame ||frame->empty())
     {
       RCLCPP_WARN(this->get_logger(), "Empty frame captured");
       return;
     }
 
-    // 手动构建ROS2 Image消息
-    auto msg = std::make_shared<sensor_msgs::msg::Image>();
+    // 使用 cv_bridge 转换图像
+    auto msg = cv_bridge::CvImage(
+                   std_msgs::msg::Header(), // 消息头
+                   "bgr8",                  // OpenCV 默认 BGR 格式
+                   *frame                    // 输入图像
+                   )
+                   .toImageMsg();
 
-    // 设置消息头
+    // 设置时间戳和坐标系
     msg->header.stamp = this->now();
     msg->header.frame_id = "camera";
-
-    // 图像参数
-    msg->height = frame.rows;
-    msg->width = frame.cols;
-    msg->encoding = "bgr8"; // OpenCV默认BGR格式
-    msg->is_bigendian = false;
-    msg->step = static_cast<sensor_msgs::msg::Image::_step_type>(frame.step);
-
-    // 复制图像数据
-    msg->data.assign(frame.datastart, frame.dataend);
 
     // 发布消息
     pub_->publish(*msg);
   }
+} // namespace detector_node
 
-} // namespace my_camera_pkg
+#include "rclcpp_components/register_node_macro.hpp"
 RCLCPP_COMPONENTS_REGISTER_NODE(detector_node::detector_node)

@@ -1,21 +1,26 @@
 #pragma once
 #include <opencv2/opencv.hpp>
-#include <memory>
-#include <mutex>          
-#include <unordered_map>
-#include <string>
-
-#include "ament_index_cpp/get_package_share_directory.hpp"
+#include <mutex>
+#include <thread>
+#include <atomic>
 namespace detector {
-
 class detector {
 public:
-  detector();  // 构造函数声明
-  std::shared_ptr<const cv::Mat> get_img(const std::string& name) const;
-  void set_img(const std::string& name, cv::Mat&& img);
-private:
-  mutable std::mutex mutex_;
-  std::unordered_map<std::string, std::shared_ptr<cv::Mat>> img_map_;
-};
+    detector();
+    ~detector();
+    
+    void start_capture();
+    void stop_capture();
+    bool is_capturing() const;
+    
+    // 获取最新帧（线程安全）
+    std::pair<std::shared_ptr<const cv::Mat>, uint64_t> get_latest_frame() const;
 
+private:
+    void main_loop();  
+
+    cv::VideoCapture cap_;
+    std::atomic<bool> capturing_{false};
+    std::thread capture_thread_;
+};
 } // namespace detector

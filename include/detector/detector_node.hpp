@@ -1,21 +1,22 @@
 #pragma once
+#include <detector/detector.hpp>
 
 #include <rclcpp/rclcpp.hpp>
-#include <sensor_msgs/msg/image.hpp>
-#include <detector/detector.hpp>
-#include <cv_bridge/cv_bridge.h> 
+#include "std_msgs/msg/string.hpp"
 namespace detector_node {
 
 class detector_node : public rclcpp::Node {
 public:
   explicit detector_node(const rclcpp::NodeOptions & options);
+  ~detector_node();
 private:
   void publishFrame();  // 定时回调函数声明
   detector::detector det_;
   // 成员变量
-  cv::VideoCapture cap_;
-  rclcpp::Publisher<sensor_msgs::msg::Image>::SharedPtr pub_;
+  
+  rclcpp::Publisher<std_msgs::msg::String>::SharedPtr pub_;
   rclcpp::TimerBase::SharedPtr timer_;
+  std::atomic<uint64_t> last_published_sequence_{0};
 };
 
 } // namespace detector_node

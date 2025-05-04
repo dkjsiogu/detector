@@ -42,7 +42,7 @@ namespace detector
     // 预分配内存
     set_img("raw", cv::Mat(480, 640, CV_8UC3));
     set_img("result", cv::Mat());
-    set_img("g",cv::Mat());
+    set_img("g", cv::Mat());
   }
 
   std::shared_ptr<const cv::Mat> detector::detector::return_frame()
@@ -104,7 +104,7 @@ namespace detector
           std::unique_lock<std::mutex> lock(img_mutex_);
           frame_processed_ = false;
           *img_map_["raw"] = frame.clone();
-          *img_map_["result"]=frame.clone();
+          *img_map_["result"] = frame.clone();
         }
         frame_ready_.notify_one();
       }
@@ -134,10 +134,10 @@ namespace detector
         cv::inRange(hsv, lower_green_, upper_green_, mask);
         cv::morphologyEx(mask, mask, cv::MORPH_OPEN, kernel);
         *img_map_["g"] = mask.clone();
-        
+
         auto contour = findArrowContour(mask);
         auto direction = determineDirection(contour);
-        std::cout<<direction;
+        std::cout << direction;
         frame_processed_ = true;
       }
     }
@@ -164,49 +164,55 @@ namespace detector
 
   std::vector<cv::Point> detector::findArrowContour(const cv::Mat &binary_mask)
   {
-    
+
     std::vector<std::vector<cv::Point>> contours;
     cv::findContours(binary_mask.clone(), contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
 
     // 筛选条件：面积、长宽比、凸性等
-    for (const auto &contour : contours) {
-        double area = cv::contourArea(contour);
-        
-        // 绘制所有轮廓（红色表示被淘汰的）
-        cv::drawContours(*img_map_["result"], contours, &contour - &contours[0], 
-                        (area < 500) ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 255, 0), 2);
-        
-        if (area < 1500) continue;
+    for (const auto &contour : contours)
+    {
+      double area = cv::contourArea(contour);
 
-        cv::RotatedRect rect = cv::minAreaRect(contour);
-        float aspect_ratio = rect.size.width / rect.size.height;
-        
-        // 绘制最小外接矩形（黄色）
-        cv::Point2f vertices[4];
-        rect.points(vertices);
-        for(int i = 0; i < 4; i++) {
-            cv::line(*img_map_["result"], vertices[i], vertices[(i+1)%4], 
-                    cv::Scalar(0, 255, 255), 2);
-        }
+      // 绘制所有轮廓（红色表示被淘汰的）
+      cv::drawContours(*img_map_["result"], contours, &contour - &contours[0],
+                       (area < 500) ? cv::Scalar(0, 0, 255) : cv::Scalar(0, 255, 0), 2);
 
-        if (aspect_ratio < 0.5 || aspect_ratio > 2.0) continue;
+      if (area<500)
+        continue;
 
-        // 凸性检测（箭头通常有凸缺陷）
-        std::vector<int> hull;
-        cv::convexHull(contour, hull);
-        
-        // 绘制凸包点（紫色）
-        for(size_t j = 0; j < hull.size(); j++) {
-            cv::circle(*img_map_["result"], contour[hull[j]], 5, 
-                      cv::Scalar(255, 0, 255), -1);
-        }
+      cv::RotatedRect rect = cv::minAreaRect(contour);
+      float aspect_ratio = rect.size.width / rect.size.height;
 
-        if (hull.size() > 5 && hull.size()<7) {
-            // 标记最终选中的轮廓（青色）
-            cv::drawContours(*img_map_["result"], std::vector<std::vector<cv::Point>>{contour}, 
-                           0, cv::Scalar(255, 255, 0), 3);
-            return contour;
-        }
+      // 绘制最小外接矩形（黄色）
+      cv::Point2f vertices[4];
+      rect.points(vertices);
+      for (int i = 0; i < 4; i++)
+      {
+        cv::line(*img_map_["result"], vertices[i], vertices[(i + 1) % 4],
+                 cv::Scalar(0, 255, 255), 2);
+      }
+
+      if (aspect_ratio < 0.5 || aspect_ratio > 2.0)
+        continue;
+
+      // 凸性检测（箭头通常有凸缺陷）
+      std::vector<int> hull;
+      cv::convexHull(contour, hull);
+
+      // 绘制凸包点（紫色）
+      for (size_t j = 0; j < hull.size(); j++)
+      {
+        cv::circle(*img_map_["result"], contour[hull[j]], 5,
+                   cv::Scalar(255, 0, 255), -1);
+      }
+
+      if (hull.size() > 15 && hull.size() < 50)
+      {
+        // 标记最终选中的轮廓（青色）
+        cv::drawContours(*img_map_["result"], std::vector<std::vector<cv::Point>>{contour},
+                         0, cv::Scalar(255, 255, 0), 3);
+        return contour;
+      }
     }
 
     return {};
@@ -216,66 +222,61 @@ namespace detector
   {
     if (contour.empty()) return UNKNOWN;
 
-    // 确保result图像已初始化
-    if (img_map_["result"]->empty()) {
-        *img_map_["result"] = cv::Mat::zeros(480, 640, CV_8UC3);
-    }
+    // 1. 计算最小外接矩形和凸包
+    //cv::RotatedRect rect = cv::minAreaRect(contour);
+    std::vector<int> hull;
+    cv::convexHull(contour, hull);
 
-    // 方法1：最小外接矩形方向
-    cv::RotatedRect rect = cv::minAreaRect(contour);
-    float angle = rect.angle;
-    if (rect.size.width < rect.size.height) angle += 90;
-
-    // 绘制矩形中心（蓝色）
-    cv::circle(*img_map_["result"], rect.center, 8, cv::Scalar(255, 0, 0), -1);
-
-    // 方法2：主成分分析(PCA)
-    cv::Mat data_pts = cv::Mat(contour.size(), 2, CV_64F);
-    for (size_t i = 0; i < contour.size(); i++) {
-        data_pts.at<double>(i, 0) = contour[i].x;
-        data_pts.at<double>(i, 1) = contour[i].y;
-    }
-    cv::PCA pca(data_pts, cv::Mat(), cv::PCA::DATA_AS_ROW);
-    cv::Point2d eigen_vec = pca.eigenvectors.at<cv::Vec2d>(0);
-    cv::Point2d mean = pca.mean.at<cv::Vec2d>(0);
-    double pca_angle = atan2(eigen_vec.y, eigen_vec.x) * 180 / CV_PI;
-
-    // 绘制PCA主方向（红色）
-    cv::line(*img_map_["result"], mean, 
-             mean + eigen_vec * 100, 
-             cv::Scalar(0, 0, 255), 2);
-
-    // 综合判定
-    double final_angle = (angle + pca_angle) / 2;
-
-    // 绘制角度文本
-    std::string angle_text = "Angle: " + std::to_string(int(final_angle));
-    cv::putText(*img_map_["result"], angle_text, cv::Point(10, 30), 
-               cv::FONT_HERSHEY_SIMPLEX, 0.7, cv::Scalar(255, 255, 255), 2);
-
-    // 绘制方向指示箭头
-    cv::Point center(rect.center.x, rect.center.y);
-    cv::Point tip;
-    ArrowDirection dir;
+    // 2. 寻找箭头的三角形部分（凸缺陷最深的区域）
+    std::vector<cv::Vec4i> defects;
+    cv::convexityDefects(contour, hull, defects);
     
-    if (final_angle > -45 && final_angle <= 45) {
-        dir = RIGHT;
-        tip = center + cv::Point(50, 0);
-    } else if (final_angle > 45 && final_angle <= 135) {
-        dir = DOWN;
-        tip = center + cv::Point(0, 50);
-    } else if (final_angle > 135 || final_angle <= -135) {
-        dir = LEFT;
-        tip = center + cv::Point(-50, 0);
+    if (defects.empty()) return UNKNOWN;
+
+    // 找到最深的凸缺陷（箭头的"凹口"）
+    auto max_defect = *std::max_element(defects.begin(), defects.end(),
+        [](const cv::Vec4i& a, const cv::Vec4i& b) {
+            return a[3] < b[3]; // 比较缺陷深度
+        });
+
+    // 3. 确定三角形顶点（凹口两侧的点）
+    cv::Point triangle_top = contour[max_defect[2]]; // 凹口最深点
+    cv::Point left_edge = contour[max_defect[0]];    // 凹口左边缘
+    cv::Point right_edge = contour[max_defect[1]];   // 凹口右边缘
+
+    // 4. 计算箭头的指向方向
+    cv::Point2f arrow_dir;
+    if (cv::norm(triangle_top - left_edge) > cv::norm(triangle_top - right_edge)) {
+        // 箭头指向left_edge方向
+        arrow_dir = cv::Point2f(left_edge - triangle_top);
     } else {
-        dir = UP;
-        tip = center + cv::Point(0, -50);
+        // 箭头指向right_edge方向
+        arrow_dir = cv::Point2f(right_edge - triangle_top);
     }
     
-    // 绘制方向箭头（白色）
-    cv::arrowedLine(*img_map_["result"], center, tip, 
-                   cv::Scalar(255, 255, 255), 3, cv::LINE_AA, 0, 0.1);
+    // 规范化方向向量
+    arrow_dir /= cv::norm(arrow_dir);
+    arrow_dir=-arrow_dir;
+    // 5. 计算角度并确定具体方向
+    double angle = atan2(arrow_dir.y, arrow_dir.x) * 180 / CV_PI;
+    angle = fmod(angle + 360, 360); // 规范化到0-360度
 
-    return dir;
+    // 6. 可视化调试（可选）
+    if (!img_map_["result"]->empty()) {
+        // 绘制凸缺陷
+        cv::line(*img_map_["result"], left_edge, triangle_top, cv::Scalar(0,255,255), 2);
+        cv::line(*img_map_["result"], right_edge, triangle_top, cv::Scalar(0,255,255), 2);
+        
+        // 绘制指向方向
+        cv::arrowedLine(*img_map_["result"], triangle_top, 
+                       triangle_top + cv::Point(arrow_dir * 50), 
+                       cv::Scalar(255,0,0), 3);
+    }
+
+    // 7. 方向判定
+    if (angle >= 315 || angle < 45) return RIGHT;
+    if (angle >= 45 && angle < 135) return DOWN;
+    if (angle >= 135 && angle < 225) return LEFT;
+    return UP;
   }
 } // namespace detector

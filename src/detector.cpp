@@ -14,14 +14,30 @@ namespace detector
     cap_.set(cv::CAP_PROP_FRAME_WIDTH, 640);
     cap_.set(cv::CAP_PROP_FRAME_HEIGHT, 480);
     cap_.set(cv::CAP_PROP_FPS, 30);
-    net_arrow_ = cv::dnn::readNetFromONNX("models/arrow.onnx");
-    if (net_arrow_.empty()) {
-        throw std::runtime_error("Failed to load ONNX model");
+    // 使用 Inference 类初始化模型
+    arrow_inference_ = std::make_unique<Inference>(
+        "/home/temp/project/good/install/detector/share/detector/models/arrow.onnx",
+        cv::Size(640, 640), // 模型输入尺寸
+        "",                 // 类别文件路径，如果没有可以传空字符串
+        false               // 是否使用 CUDA
+    );
+
+    cylida_inference_ = std::make_unique<Inference>(
+        "/home/temp/project/good/install/detector/share/detector/models/cylida.onnx",
+        cv::Size(640, 640),
+        "",
+        false);
+    net_arrow_ = cv::dnn::readNetFromONNX("/home/temp/project/good/install/detector/share/detector/models/arrow.onnx");
+    if (net_arrow_.empty())
+    {
+      throw std::runtime_error("Failed to load ONNX model");
     }
-    net_cylida_ = cv::dnn::readNetFromONNX("models/cylida.onnx");
-    if (net_cylida_.empty()) {
-        throw std::runtime_error("Failed to load ONNX model");
+    net_cylida_ = cv::dnn::readNetFromONNX("/home/temp/project/good/install/detector/share/detector/models/cylida.onnx");
+    if (net_cylida_.empty())
+    {
+      throw std::runtime_error("Failed to load ONNX model");
     }
+    current_frame_ = cv::Mat(480, 640, CV_8UC3);
   }
 
   detector::~detector()
@@ -55,6 +71,15 @@ namespace detector
   {
     return capturing_;
   }
+  const cv::Mat detector::return_frame() const
+  {
+    std::lock_guard<std::mutex> lock(frame_mutex_); 
+    if (current_frame_.empty())
+    {
+      return cv::Mat();
+    }
+    return current_frame_;
+  }
 
   void detector::capture_thread_func()
   {
@@ -62,45 +87,42 @@ namespace detector
     while (capturing_)
     {
       if (cap_.read(frame))
-      { 
-        cv::flip(frame, frame, -1);
-         cv::Mat blob = cv::dnn::blobFromImage(frame, 1.0, cv::Size(64, 64));
-            net_arrow_.setInput(blob);
-            cv::Mat outputs = net_arrow_.forward();
-            
-            // 解析结果
-            cv::Point classIdPoint;
-            double confidence;
-            cv::minMaxLoc(outputs.reshape(1, 1), nullptr, &confidence, nullptr, &classIdPoint);
-            int class_id = classIdPoint.x;
-            
-            // 显示结果
-            std::string label = cv::format("%s: %.2f", class_names_[class_id].c_str(), confidence);
-            cv::putText(frame, label, cv::Point(10, 30), cv::FONT_HERSHEY_SIMPLEX, 0.8, cv::Scalar(0, 255, 0), 2);
-            
-            cv::imshow("Debug", frame);
-      }
-      else
       {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10));
-      }
-    }
-  }
-  std::string detector::detector::get_result(ArrowDirection Dir)
-  {
-    switch (Dir)
-    {
-    case UNKNOWN:
-      return "UNKNOWN";
-    case UP:
-      return "UP";
-    case RIGHT:
-      return "RIGHT";
-    case LEFT:
-      return "LEFT";
+        if (cap_.read(frame))
+        {
+          cv::flip(frame, frame, -1);
 
-    default:
-      break;
+          // 调用推理（箭头+圆柱体检测）
+          //auto arrow_dets = arrow_inference_->runInference(frame);
+           auto cylida_dets = cylida_inference_->runInference(frame);
+
+          // 合并结果
+          std::vector<Detection> all_dets;
+          //all_dets.insert(all_dets.end(), arrow_dets.begin(), arrow_dets.end());
+           all_dets.insert(all_dets.end(), cylida_dets.begin(), cylida_dets.end());
+
+          // 绘制检测框（直接使用Detection中的颜色和类别）
+          cv::Mat display = frame.clone();
+          for (const auto &det : all_dets)
+          {
+            std::cout<<det.className.c_str()<<" "<< det.confidence<<std::endl;
+            cv::rectangle(display, det.box, det.color, 2);
+            std::string label = cv::format("%s %.2f", det.className.c_str(), det.confidence);
+            cv::putText(display, label, det.box.tl() + cv::Point(0, -5),
+                        cv::FONT_HERSHEY_SIMPLEX, 0.6, det.color, 2);
+          }
+
+          // 更新当前帧
+          {
+            std::lock_guard<std::mutex> lock(frame_mutex_);
+            current_frame_ = display.clone();
+          }
+        }
+        else
+        {
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        }
+      }
     }
   }
 } // namespace detector

@@ -1,6 +1,7 @@
 #pragma once
 #include <opencv2/opencv.hpp>
 #include <opencv2/dnn.hpp>
+#include "detector/inference.h"
 #include <thread>
 #include <mutex>
 #include <condition_variable>
@@ -10,7 +11,8 @@
 
 namespace detector {
 
-    enum ArrowDirection { UNKNOWN,UP, LEFT, RIGHT};
+    
+    
 
 class detector {
 public:
@@ -20,19 +22,24 @@ public:
     void start_capture();
     void stop_capture();
     bool is_capturing() const;
+    const cv::Mat return_frame() const;
 
-    std::string get_result(ArrowDirection Dir);
-    
 private:
 
     void capture_thread_func();
     
     cv::VideoCapture cap_;
     std::atomic<bool> capturing_{false};
-    ArrowDirection result;
-    const std::vector<std::string> class_names_{"U", "R", "L"};
+    
+
     cv::dnn::Net net_arrow_;
     cv::dnn::Net net_cylida_;
+    mutable std::mutex frame_mutex_;  // 用于保护current_frame_
+    cv::Mat current_frame_;           // 存储当前帧
+
+    std::unique_ptr<Inference> arrow_inference_;  // 声明箭头检测推理器
+    std::unique_ptr<Inference> cylida_inference_; // 声明圆柱体检测推理器
+
     // thread
     std::thread capture_thread_;
     

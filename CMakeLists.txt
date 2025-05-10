@@ -12,7 +12,7 @@ set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 ## Find dependencies ##
 #######################
 find_package(ament_cmake_auto REQUIRED)
-find_package(OpenCV 4.5 REQUIRED COMPONENTS core imgproc)
+find_package(OpenCV 4.11 REQUIRED COMPONENTS core imgproc)
 # 自动查找所有在package.xml中声明的依赖
 ament_auto_find_build_dependencies()
 
@@ -23,15 +23,19 @@ ament_auto_find_build_dependencies()
 # 1. 编译纯算法静态库（仍需手动配置）
 add_library(detector_lib STATIC
   src/detector.cpp
+  src/inference.cpp
 )
 target_include_directories(detector_lib PUBLIC
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
   ${OpenCV_INCLUDE_DIRS}
+  ${TORCH_INCLUDE_DIRS}
 )
 target_link_libraries(detector_lib PUBLIC
   ${OpenCV_LIBS}
+  ${TORCH_LIBRARIES}
   opencv_core
+  opencv_dnn
   ament_index_cpp::ament_index_cpp
   opencv_videoio # 关键：解决VideoCapture符号问题
   opencv_imgproc
@@ -67,6 +71,10 @@ install(DIRECTORY launch/
 install(DIRECTORY 
   res/
   DESTINATION share/${PROJECT_NAME}/
+)
+install(DIRECTORY 
+  models/
+  DESTINATION share/${PROJECT_NAME}/models
 )
 # 自动安装规则（会安装所有通过ament_auto_add_*添加的目标）
 ament_auto_package(

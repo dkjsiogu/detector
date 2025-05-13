@@ -41,7 +41,18 @@ target_link_libraries(detector_lib PUBLIC
   opencv_imgproc
   opencv_highgui
 )
-
+add_library(serial_lib STATIC
+  src/serial_com.cpp
+)
+target_include_directories(serial_lib PUBLIC
+  $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+  $<INSTALL_INTERFACE:include>
+  /usr/include
+)
+# 链接库
+target_link_libraries(serial_lib PUBLIC
+  rclcpp::rclcpp
+)
 # 2. 自动构建ROS 2节点组件
 ament_auto_add_library(detector_component SHARED
   src/detector_node.cpp
@@ -53,6 +64,7 @@ target_include_directories(detector_component PUBLIC
 )
 target_link_libraries(detector_component
   detector_lib
+  serial_lib
   image_transport::image_transport
   ${OpenCV_LIBS}
 )

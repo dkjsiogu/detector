@@ -95,5 +95,6 @@
         "typeinfo": "cpp",
         "valarray": "cpp"
     },
-    "cmake.sourceDirectory": "/home/dkj/ros_ws/src/ros2_hik_camera"
+    "cmake.sourceDirectory": "/home/dkj/ros_ws/src/ros2_hik_camera",
+    "cmake.ignoreCMakeListsMissing": true
 }
